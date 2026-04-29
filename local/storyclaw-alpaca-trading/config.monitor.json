@@ -5,11 +5,33 @@
   "autonomous": true,
   "discordTarget": "user:1485786023609761904",
   "checkIntervalMinutes": 5,
-  "stockWatchlist": ["AAPL", "NVDA", "TSLA", "SPY", "QQQ", "AMD", "META", "MSFT"],
-  "cryptoWatchlist": ["BTCUSD", "ETHUSD", "SOLUSD", "DOGEUSD"],
+  "stockWatchlist": [
+    "AAPL",
+    "NVDA",
+    "TSLA",
+    "SPY",
+    "QQQ",
+    "AMD",
+    "META",
+    "MSFT"
+  ],
+  "cryptoWatchlist": [
+    "BTCUSD",
+    "ETHUSD",
+    "SOLUSD",
+    "DOGEUSD"
+  ],
   "sizing": {
-    "stocks": { "high": 1000, "medium": 500, "low": 250 },
-    "crypto": { "high": 500, "medium": 250, "low": 100 }
+    "stocks": {
+      "high": 1000,
+      "medium": 500,
+      "low": 250
+    },
+    "crypto": {
+      "high": 500,
+      "medium": 250,
+      "low": 100
+    }
   },
   "thresholds": {
     "highConfidence": 78,
@@ -23,5 +45,5 @@
     "maxSpreadPctCrypto": 1.2
   },
   "cooldownMinutes": 180,
-  "minPositions": 5
+  "minPositions": 10
 }

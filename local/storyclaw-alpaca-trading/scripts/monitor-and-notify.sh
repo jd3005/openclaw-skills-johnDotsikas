@@ -18,38 +18,44 @@ MESSAGE=""
 AUTO_LOG=""
 
 if [[ -n "$BUY_OUTPUT" && "$BUY_OUTPUT" != "No trade ideas right now." && "$BUY_OUTPUT" != *"timed out"* ]]; then
-  # Parse symbols and amounts
-  # Note: The monitor.js might return multiple ideas separated by ---
-  IDEA_BLOCKS=$(printf '%s\n' "$BUY_OUTPUT" | awk '/---/{exit}{print}') # Get first idea for execution
-  
-  SYMBOL=$(printf '%s\n' "$IDEA_BLOCKS" | sed -n 's/.*Paper trade idea: //p' | head -n1)
-  AMOUNT=$(printf '%s\n' "$IDEA_BLOCKS" | sed -n 's/.*Suggested size: \$//p' | head -n1)
-  PRICE=$(printf '%s\n' "$IDEA_BLOCKS" | sed -n 's/.*Entry idea: around \$//p' | head -n1)
-  SCORE=$(printf '%s\n' "$IDEA_BLOCKS" | sed -n 's/.*Confidence: .* (\([0-9][0-9]*\))$/\1/p' | head -n1)
-  
-  if [[ -n "$SYMBOL" && -n "$AMOUNT" ]]; then
-    if [[ "$AUTONOMOUS" == "true" ]]; then
-      echo "STEP: auto-buy ($SYMBOL)"
-      BUY_RES=$(node "$BASE_DIR/scripts/trading.js" buy-amount "$SYMBOL" "$AMOUNT" 2>&1 || true)
-      if [[ "$BUY_RES" == *"Order submitted"* ]]; then
-        AUTO_LOG+="✅ **Bought**: \$${AMOUNT} of ${SYMBOL} (Price: ${PRICE})\n"
+  # Extract all (Symbol, Amount, Price) sets from the output
+  # Pattern: Paper trade idea: SYMBOL ... Suggested size: $AMOUNT ... Entry idea: around $PRICE
+  IDEAS=$(echo "$BUY_OUTPUT" | awk '
+    /Paper trade idea: / { sym=$NF }
+    /Suggested size: \$/ { amt=substr($NF, 2) }
+    /Entry idea: around \$/ { prc=substr($NF, 2); print sym","amt","prc }
+  ')
+
+  for IDEA in $IDEAS; do
+    SYMBOL=$(echo "$IDEA" | cut -d',' -f1)
+    AMOUNT=$(echo "$IDEA" | cut -d',' -f2)
+    PRICE=$(echo "$IDEA" | cut -d',' -f3)
+
+    if [[ -n "$SYMBOL" && -n "$AMOUNT" ]]; then
+      if [[ "$AUTONOMOUS" == "true" ]]; then
+        echo "STEP: auto-buy ($SYMBOL)"
+        BUY_RES=$(node "$BASE_DIR/scripts/trading.js" buy-amount "$SYMBOL" "$AMOUNT" 2>&1 || true)
+        if [[ "$BUY_RES" == *"Order submitted"* ]]; then
+          AUTO_LOG+="✅ **Bought**: \$${AMOUNT} of ${SYMBOL} (Price: ${PRICE})\n"
+        else
+          if [[ "$BUY_RES" != *"already have"* ]]; then
+            AUTO_LOG+="❌ **Failed ${SYMBOL}**: ${BUY_RES}\n"
+          fi
+        fi
       else
-        AUTO_LOG+="❌ **Failed to Buy ${SYMBOL}**: ${BUY_RES}\n"
+        # For manual mode, we just handle the first one for the pending system
+        if [[ -z "$MESSAGE" ]]; then
+          node "$BASE_DIR/scripts/save-pending-alert.js" "$SYMBOL" "$AMOUNT" "$PRICE" "70" >/dev/null 2>&1 || true
+          MESSAGE+="📈 Paper trade alert\n\n$BUY_OUTPUT\n\nReply with 'place it' to execute."
+        fi
       fi
-    else
-      node "$BASE_DIR/scripts/save-pending-alert.js" "$SYMBOL" "$AMOUNT" "$PRICE" "$SCORE" >/dev/null 2>&1 || true
     fi
-  fi
+  done
   
   if [[ "$AUTONOMOUS" == "true" ]]; then
-    # In auto mode, we don't spam the full analysis unless we bought something
-    if [[ -z "$AUTO_LOG" ]]; then
-      MESSAGE="" # Will be handled by "no recommendations" at the end
-    else
+    if [[ -n "$AUTO_LOG" ]]; then
       MESSAGE+="🤖 **Autonomous Mode Actions**\n\n"
     fi
-  else
-    MESSAGE+="📈 Paper trade alert\n\n$BUY_OUTPUT\n\nReply with 'place it' to execute."
   fi
 fi
 

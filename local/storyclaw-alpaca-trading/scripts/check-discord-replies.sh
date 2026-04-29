@@ -82,4 +82,4 @@ if [[ "$RESULT" == "UNRECOGNIZED_REPLY" || "$RESULT" == "UNRECOGNIZED_PORTFOLIO_
 fi
 
 printf '%s' "$TS" > "$STATE_FILE"
-openclaw message send --channel discord --target user:1485786023609761904 --message "$RESULT"
+/home/john/.npm-global/bin/openclaw message send --channel discord --target user:1485786023609761904 --message "$RESULT"

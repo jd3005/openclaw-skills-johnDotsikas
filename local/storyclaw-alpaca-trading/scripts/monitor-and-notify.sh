@@ -124,8 +124,7 @@ fi
 if [[ -z "$MESSAGE" ]]; then
   echo "STEP: no-message"
   if [[ "$AUTONOMOUS" == "true" ]]; then
-    CASH=$(env USER_ID="$USER_ID" node "$BASE_DIR/scripts/trading.js" account | grep "Cash:" | awk '{print $2}')
-    MESSAGE="auton executed: nothing bought or sold. Current Cash: $CASH"
+    exit 0 # Silent exit for autonomous mode if nothing happened
   else
     # For manual mode, only send every hour or if there's an alert
     MINUTE=$(date +%M)

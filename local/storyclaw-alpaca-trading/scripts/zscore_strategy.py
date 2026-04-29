@@ -21,7 +21,8 @@ class ZScoreStrategy:
             trading_path = os.path.join(script_dir, "trading.js")
             
             # We call the existing trading.js bars command to get raw data
-            cmd = ["node", trading_path, "bars", self.symbol, str(self.lookback + 5)]
+            # Using 1Hour bars for more activity and to ensure we have enough periods
+            cmd = ["node", trading_path, "bars", self.symbol, "10", "1Hour"]
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             
             lines = result.stdout.strip().split('\n')

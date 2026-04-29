@@ -29,9 +29,9 @@ function parseRsiOutput(output) {
 }
 
 function parseBarsOutput(output) {
-  const lines = output.split("\n").filter((line) => /^\s*\d{4}-\d{2}-\d{2}:/.test(line));
+  const lines = output.split("\n").filter((line) => /^\s*\d{4}-\d{2}-\d{2}/.test(line));
   return lines.map((line) => {
-    const m = line.match(/(\d{4}-\d{2}-\d{2}): O:([0-9.]+) H:([0-9.]+) L:([0-9.]+) C:([0-9.]+) V:([0-9.]+)/);
+    const m = line.match(/(\d{4}-\d{2}-\d{2}[T ]?[\d:]*Z?): O:([0-9.]+) H:([0-9.]+) L:([0-9.]+) C:([0-9.]+) V:([0-9.]+)/);
     if (!m) return null;
     return {
       date: m[1],
@@ -62,7 +62,7 @@ function safeRsi(symbol) {
 
 function safeBars(symbol) {
   try {
-    return parseBarsOutput(requestText(["bars", symbol, "30"]));
+    return parseBarsOutput(requestText(["bars", symbol, "40"]));
   } catch {
     return [];
   }
@@ -277,6 +277,7 @@ function main() {
     const rsi = safeRsi(symbol);
     const bars = safeBars(symbol);
     const setup = scoreSetup(symbol, rsi, quote, bars, isCrypto);
+    
     if (!setup) continue;
 
     const zResult = runZScoreStrategy(symbol);

@@ -305,7 +305,7 @@ const commands = {
   },
 
   // Get price bars (OHLCV)
-  async bars(symbol, days = 30) {
+  async bars(symbol, days = 30, timeframe = "1Day") {
     symbol = normalizeSymbol(symbol);
     const crypto = isCrypto(symbol);
     const end = new Date();
@@ -313,18 +313,18 @@ const commands = {
 
     let url;
     if (crypto) {
-      url = `${DATA_URL}/v1beta3/crypto/us/bars?symbols=${symbol}&start=${start.toISOString().split("T")[0]}&end=${end.toISOString().split("T")[0]}&timeframe=1Day`;
+      url = `${DATA_URL}/v1beta3/crypto/us/bars?symbols=${symbol}&start=${start.toISOString().split("T")[0]}&end=${end.toISOString().split("T")[0]}&timeframe=${timeframe}`;
     } else {
-      url = `${DATA_URL}/v2/stocks/${symbol}/bars?start=${start.toISOString().split("T")[0]}&end=${end.toISOString().split("T")[0]}&timeframe=1Day&feed=iex`;
+      url = `${DATA_URL}/v2/stocks/${symbol}/bars?start=${start.toISOString().split("T")[0]}&end=${end.toISOString().split("T")[0]}&timeframe=${timeframe}&feed=iex`;
     }
 
     const data = await request("GET", url);
     const bars = crypto ? data.bars[symbol] || [] : data.bars || [];
 
-    console.log(`📈 ${symbol} - Last ${Math.min(days, bars.length)} days:`);
-    bars.slice(-10).forEach((bar) => {
+    console.log(`📈 ${symbol} - Last ${Math.min(days, bars.length)} periods:`);
+    bars.forEach((bar) => {
       console.log(
-        `  ${bar.t.split("T")[0]}: O:${bar.o} H:${bar.h} L:${bar.l} C:${bar.c} V:${bar.v}`,
+        `  ${bar.t}: O:${bar.o} H:${bar.h} L:${bar.l} C:${bar.c} V:${bar.v}`,
       );
     });
 

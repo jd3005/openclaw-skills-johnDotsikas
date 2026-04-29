@@ -308,11 +308,11 @@ function main() {
 
   // 1. First, pick high-quality alerts (Z < -2.0)
   const alerts = [];
-  const handledSymbols = new Set();
+  const handledSymbols = new Set(currentPositions.symbols); // Don't alert/buy if already owned
 
   for (const res of allResults) {
     if (res.setup.score >= monitorConfig.thresholds.minAlertScore || res.zResult.action === "BUY") {
-      if (shouldAlert(state, res.setup.symbol, res.setup.score)) {
+      if (!handledSymbols.has(res.setup.symbol) && shouldAlert(state, res.setup.symbol, res.setup.score)) {
         const confidence = classifyConfidence(res.setup.score, res.isCrypto, res.zResult.z_score);
         alerts.push(buildAlert(res.setup, confidence, res.zResult));
         state.alerts[res.setup.symbol] = { ts: Date.now(), score: res.setup.score };

@@ -4,20 +4,20 @@
   "notifyOnly": true,
   "autonomous": true,
   "discordTarget": "user:1485786023609761904",
-  "checkIntervalMinutes": 5,
-  "minPositions": 3,
-  "maxPositions": 3,
+  "checkIntervalMinutes": 2,
+  "minPositions": 5,
+  "maxPositions": 20,
   "strategy": {
     "alpha": {
-      "symbols": ["NVDA", "TSLA", "AMD", "META", "SOLUSD", "DOGEUSD"],
+      "symbols": ["NVDA", "TSLA", "AMD", "META", "SOLUSD", "DOGEUSD", "AMZN", "GOOGL", "NFLX", "AVGO", "ORCL", "SMCI"],
       "maxSize": 2000,
       "rsiBreakout": 70,
-      "volMultiplier": 2.0,
+      "volMultiplier": 2.2,
       "trailingStop": 3.0,
       "targetGain": 25.0
     },
     "shield": {
-      "symbols": ["SPY", "QQQ", "AAPL", "MSFT", "BTCUSD", "ETHUSD"],
+      "symbols": ["SPY", "QQQ", "AAPL", "MSFT", "BTCUSD", "ETHUSD", "V", "MA", "COST", "JPM", "UNH", "PG"],
       "maxSize": 2000,
       "prefSizeMin": 1000,
       "prefSizeMax": 2000,

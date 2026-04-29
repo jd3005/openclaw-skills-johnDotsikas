@@ -178,6 +178,32 @@ async function main() {
     }
   }
 
+  // 2. Strategic Fill (If under minimum)
+  const minRequired = monitorConfig.minPositions || 5;
+  if (currentCount + alerts.length < minRequired) {
+    const slotsToFill = minRequired - (currentCount + alerts.length);
+    // Sort all available symbols by "undervaluation" (Z-Score or RSI)
+    // We'll use the AlphaShieldStrategy output to find the best of the remaining bunch
+    const candidates = [];
+    for (const symbol of symbols) {
+       if (handledSymbols.has(symbol)) continue;
+       const res = runAlphaShieldStrategy(symbol, marketContext);
+       if (!res || res.error) continue;
+       // We prefer lower RSI for fill
+       candidates.push(res);
+    }
+    
+    candidates.sort((a, b) => a.rsi - b.rsi);
+
+    for (let i = 0; i < Math.min(slotsToFill, candidates.length); i++) {
+      const res = candidates[i];
+      if (currentCount + alerts.length >= maxAllowed) break;
+      alerts.push(`⚠️ **STRATEGIC FILL** (Portfolio < ${minRequired})\n${buildAlphaShieldAlert(res)}`);
+      state.alerts[res.symbol] = { ts: Date.now(), score: res.price };
+      handledSymbols.add(res.symbol);
+    }
+  }
+
   if (alerts.length > 0) {
     console.log(alerts.join("\n\n---\n\n"));
     saveState(state);

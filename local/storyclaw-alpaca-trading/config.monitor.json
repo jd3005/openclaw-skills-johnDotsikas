@@ -45,5 +45,5 @@
     "maxSpreadPctCrypto": 1.2
   },
   "cooldownMinutes": 180,
-  "minPositions": 10
+  "minPositions": 15
 }

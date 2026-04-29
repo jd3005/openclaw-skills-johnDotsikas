@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import sys
+import os
 import subprocess
 import math
 import statistics
@@ -15,8 +16,12 @@ class ZScoreStrategy:
     def get_market_data(self):
         """Fetch historical bars using the existing trading.js utility."""
         try:
+            # Get the directory of the current script
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            trading_path = os.path.join(script_dir, "trading.js")
+            
             # We call the existing trading.js bars command to get raw data
-            cmd = ["node", "scripts/trading.js", "bars", self.symbol, str(self.lookback + 5)]
+            cmd = ["node", trading_path, "bars", self.symbol, str(self.lookback + 5)]
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             
             lines = result.stdout.strip().split('\n')

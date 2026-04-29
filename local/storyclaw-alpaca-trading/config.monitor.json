@@ -4,7 +4,7 @@
   "notifyOnly": true,
   "autonomous": true,
   "discordTarget": "user:1485786023609761904",
-  "checkIntervalMinutes": 60,
+  "checkIntervalMinutes": 5,
   "stockWatchlist": ["AAPL", "NVDA", "TSLA", "SPY", "QQQ", "AMD", "META", "MSFT"],
   "cryptoWatchlist": ["BTCUSD", "ETHUSD", "SOLUSD", "DOGEUSD"],
   "sizing": {

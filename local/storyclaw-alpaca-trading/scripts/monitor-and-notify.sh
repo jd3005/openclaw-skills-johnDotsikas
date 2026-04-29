@@ -17,10 +17,10 @@ MESSAGE=""
 AUTO_LOG=""
 
 if [[ -n "$BUY_OUTPUT" && "$BUY_OUTPUT" != "No trade ideas right now." && "$BUY_OUTPUT" != *"timed out"* ]]; then
-  FIRST_SYMBOL=$(printf '%s\n' "$BUY_OUTPUT" | sed -n 's/^Paper trade idea: //p' | head -n1)
-  FIRST_AMOUNT=$(printf '%s\n' "$BUY_OUTPUT" | sed -n 's/^Suggested size: \$//p' | head -n1)
-  FIRST_PRICE=$(printf '%s\n' "$BUY_OUTPUT" | sed -n 's/^Entry idea: around \$//p' | head -n1)
-  FIRST_SCORE=$(printf '%s\n' "$BUY_OUTPUT" | sed -n 's/^Confidence: .* (\([0-9][0-9]*\))$/\1/p' | head -n1)
+  FIRST_SYMBOL=$(printf '%s\n' "$BUY_OUTPUT" | sed -n 's/.*Paper trade idea: //p' | head -n1)
+  FIRST_AMOUNT=$(printf '%s\n' "$BUY_OUTPUT" | sed -n 's/.*Suggested size: \$//p' | head -n1)
+  FIRST_PRICE=$(printf '%s\n' "$BUY_OUTPUT" | sed -n 's/.*Entry idea: around \$//p' | head -n1)
+  FIRST_SCORE=$(printf '%s\n' "$BUY_OUTPUT" | sed -n 's/.*Confidence: .* (\([0-9][0-9]*\))$/\1/p' | head -n1)
   
   if [[ -n "$FIRST_SYMBOL" && -n "$FIRST_AMOUNT" ]]; then
     if [[ "$AUTONOMOUS" == "true" ]]; then

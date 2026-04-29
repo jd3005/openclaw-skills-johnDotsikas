@@ -251,10 +251,25 @@ function buildAlert(setup, confidence, zResult) {
   ].join("\n");
 }
 
+function getPositionCount() {
+  try {
+    const output = execFileSync("node", [path.join(__dirname, "trading.js"), "positions"], {
+      env: { ...process.env, USER_ID: monitorConfig.userId },
+      encoding: "utf8",
+    });
+    const matches = output.match(/^[A-Z/]+:/gm);
+    return matches ? matches.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
 function main() {
   const state = loadState();
   const symbols = [...monitorConfig.stockWatchlist, ...monitorConfig.cryptoWatchlist];
-  const alerts = [];
+  const allResults = [];
+  const currentCount = getPositionCount();
+  const minRequired = monitorConfig.minPositions || 0;
 
   for (const symbol of symbols) {
     const isCrypto = monitorConfig.cryptoWatchlist.includes(symbol);
@@ -264,20 +279,45 @@ function main() {
     const setup = scoreSetup(symbol, rsi, quote, bars, isCrypto);
     if (!setup) continue;
 
-    // Call the Python expert strategy
     const zResult = runZScoreStrategy(symbol);
-    if (zResult.error || !zResult.z_score) continue;
+    if (zResult.error || zResult.z_score === undefined) continue;
 
-    // Boost score if Z-Score agrees
     if (zResult.action === "BUY") setup.score += 20;
     if (zResult.action === "SELL") setup.score -= 20;
 
-    if (setup.score < monitorConfig.thresholds.minAlertScore && !zResult.action) continue;
-    if (!shouldAlert(state, symbol, setup.score)) continue;
-    
-    const confidence = classifyConfidence(setup.score, isCrypto);
-    alerts.push(buildAlert(setup, confidence, zResult));
-    state.alerts[symbol] = { ts: Date.now(), score: setup.score };
+    allResults.push({ setup, zResult, isCrypto });
+  }
+
+  // 1. First, pick high-quality alerts (Z < -2.0)
+  const alerts = [];
+  const handledSymbols = new Set();
+
+  for (const res of allResults) {
+    if (res.setup.score >= monitorConfig.thresholds.minAlertScore || res.zResult.action === "BUY") {
+      if (shouldAlert(state, res.setup.symbol, res.setup.score)) {
+        const confidence = classifyConfidence(res.setup.score, res.isCrypto);
+        alerts.push(buildAlert(res.setup, confidence, res.zResult));
+        state.alerts[res.setup.symbol] = { ts: Date.now(), score: res.setup.score };
+        handledSymbols.add(res.setup.symbol);
+      }
+    }
+  }
+
+  // 2. If under the minimum, force-pick the best remaining "relatively undervalued" stocks
+  if (currentCount + alerts.length < minRequired) {
+    const slotsToFill = minRequired - (currentCount + alerts.length);
+    const candidates = allResults
+      .filter(r => !handledSymbols.has(r.setup.symbol))
+      .filter(r => r.zResult.z_score < 0.8) // Don't force-buy if it's already overvalued
+      .sort((a, b) => a.zResult.z_score - b.zResult.z_score); // Lowest Z-score first
+
+    for (let i = 0; i < Math.min(slotsToFill, candidates.length); i++) {
+      const res = candidates[i];
+      const confidence = classifyConfidence(res.setup.score, res.isCrypto);
+      const alert = buildAlert(res.setup, confidence, res.zResult);
+      alerts.push(`⚠️ **FORCED ENTRY** (Portfolio < ${minRequired})\n${alert}`);
+      state.alerts[res.setup.symbol] = { ts: Date.now(), score: res.setup.score };
+    }
   }
 
   saveState(state);

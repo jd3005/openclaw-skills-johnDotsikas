@@ -1,25 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_DIR="/home/john/.agents/skills/storyclaw-alpaca-trading"
+BASE_DIR="/home/john/.openclaw/skills/local/storyclaw-alpaca-trading"
 STATE_DIR="$BASE_DIR/state"
 STATE_FILE="$STATE_DIR/discord-reply-offset.txt"
-SESSION_FILE="/home/john/.openclaw/agents/main/sessions/10cd81a3-1933-48ef-b43c-2c84232fb450.jsonl"
+SESSION_FILE=$(ls -t /home/john/.openclaw/agents/main/sessions/*.jsonl | head -n 1)
 mkdir -p "$STATE_DIR"
 LAST_TS="0"
 if [[ -f "$STATE_FILE" ]]; then
   LAST_TS=$(cat "$STATE_FILE")
 fi
 
-if [[ ! -f "$SESSION_FILE" ]]; then
+if [[ -z "$SESSION_FILE" || ! -f "$SESSION_FILE" ]]; then
   exit 0
 fi
 
 PAYLOAD=$(python3 - <<'PY'
-import json
+import json, glob, os
 from pathlib import Path
-session = Path('/home/john/.openclaw/agents/main/sessions/10cd81a3-1933-48ef-b43c-2c84232fb450.jsonl')
-last_ts = int(Path('/home/john/.agents/skills/storyclaw-alpaca-trading/state/discord-reply-offset.txt').read_text().strip()) if Path('/home/john/.agents/skills/storyclaw-alpaca-trading/state/discord-reply-offset.txt').exists() else 0
+sessions = glob.glob('/home/john/.openclaw/agents/main/sessions/*.jsonl')
+if not sessions:
+    exit(0)
+session = Path(max(sessions, key=os.path.getmtime))
+last_ts = int(Path('/home/john/.openclaw/skills/local/storyclaw-alpaca-trading/state/discord-reply-offset.txt').read_text().strip()) if Path('/home/john/.openclaw/skills/local/storyclaw-alpaca-trading/state/discord-reply-offset.txt').exists() else 0
 best = None
 for line in session.read_text().splitlines():
     try:

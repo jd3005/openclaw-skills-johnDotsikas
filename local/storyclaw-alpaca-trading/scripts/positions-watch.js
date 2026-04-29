@@ -58,14 +58,20 @@ try {
 
     const isExit = zResult.recommendation.startsWith("EXIT");
     const isStop = zResult.recommendation.includes("STOP");
+    const hardStop = pos.pnlPct <= -5.0;
+    const hardTakeProfit = pos.pnlPct >= 10.0;
     
-    if (isExit || isStop) {
+    if (isExit || isStop || hardStop || hardTakeProfit) {
+      let reason = zResult.reasoning;
+      if (hardStop) reason = `Hard Stop-Loss triggered at ${pos.pnlPct.toFixed(2)}%`;
+      if (hardTakeProfit) reason = `Hard Take-Profit triggered at ${pos.pnlPct.toFixed(2)}%`;
+
       alerts.push({
         symbol: pos.symbol,
         qty: pos.qty,
         pnlPct: pos.pnlPct,
         z_score: zResult.z_score,
-        reason: zResult.reasoning
+        reason: reason
       });
     }
   }

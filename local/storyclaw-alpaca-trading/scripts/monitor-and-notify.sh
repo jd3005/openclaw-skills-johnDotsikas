@@ -3,12 +3,13 @@ set -euo pipefail
 
 BASE_DIR="/home/john/.openclaw/skills/local/storyclaw-alpaca-trading"
 USER_ID="john"
+export USER_ID
 TARGET="user:1485786023609761904"
 OPENCLAW="/home/john/.npm-global/bin/openclaw"
 AUTONOMOUS=$(jq -r '.autonomous' "$BASE_DIR/config.monitor.json")
 
 echo "STEP: buy-scan"
-BUY_OUTPUT=$(timeout 45s env USER_ID="$USER_ID" node "$BASE_DIR/scripts/monitor.js" 2>&1 || true)
+BUY_OUTPUT=$(timeout 60s env USER_ID="$USER_ID" node "$BASE_DIR/scripts/monitor.js" 2>&1 || true)
 echo "STEP: sell-scan"
 SELL_OUTPUT=$(timeout 45s env USER_ID="$USER_ID" node "$BASE_DIR/scripts/positions-watch.js" 2>/dev/null || echo '[]')
 
@@ -17,82 +18,90 @@ MESSAGE=""
 AUTO_LOG=""
 
 if [[ -n "$BUY_OUTPUT" && "$BUY_OUTPUT" != "No trade ideas right now." && "$BUY_OUTPUT" != *"timed out"* ]]; then
-  FIRST_SYMBOL=$(printf '%s\n' "$BUY_OUTPUT" | sed -n 's/.*Paper trade idea: //p' | head -n1)
-  FIRST_AMOUNT=$(printf '%s\n' "$BUY_OUTPUT" | sed -n 's/.*Suggested size: \$//p' | head -n1)
-  FIRST_PRICE=$(printf '%s\n' "$BUY_OUTPUT" | sed -n 's/.*Entry idea: around \$//p' | head -n1)
-  FIRST_SCORE=$(printf '%s\n' "$BUY_OUTPUT" | sed -n 's/.*Confidence: .* (\([0-9][0-9]*\))$/\1/p' | head -n1)
+  # Parse symbols and amounts
+  # Note: The monitor.js might return multiple ideas separated by ---
+  IDEA_BLOCKS=$(printf '%s\n' "$BUY_OUTPUT" | awk '/---/{exit}{print}') # Get first idea for execution
   
-  if [[ -n "$FIRST_SYMBOL" && -n "$FIRST_AMOUNT" ]]; then
+  SYMBOL=$(printf '%s\n' "$IDEA_BLOCKS" | sed -n 's/.*Paper trade idea: //p' | head -n1)
+  AMOUNT=$(printf '%s\n' "$IDEA_BLOCKS" | sed -n 's/.*Suggested size: \$//p' | head -n1)
+  PRICE=$(printf '%s\n' "$IDEA_BLOCKS" | sed -n 's/.*Entry idea: around \$//p' | head -n1)
+  SCORE=$(printf '%s\n' "$IDEA_BLOCKS" | sed -n 's/.*Confidence: .* (\([0-9][0-9]*\))$/\1/p' | head -n1)
+  
+  if [[ -n "$SYMBOL" && -n "$AMOUNT" ]]; then
     if [[ "$AUTONOMOUS" == "true" ]]; then
-      echo "STEP: auto-buy"
-      node "$BASE_DIR/scripts/trading.js" buy-amount "$FIRST_SYMBOL" "$FIRST_AMOUNT" > /tmp/buy_res.log 2>&1 || true
-      AUTO_LOG+="✅ **Autonomous Buy**: Placed order for \$${FIRST_AMOUNT} of ${FIRST_SYMBOL} at market.\n"
+      echo "STEP: auto-buy ($SYMBOL)"
+      BUY_RES=$(node "$BASE_DIR/scripts/trading.js" buy-amount "$SYMBOL" "$AMOUNT" 2>&1 || true)
+      if [[ "$BUY_RES" == *"Order submitted"* ]]; then
+        AUTO_LOG+="✅ **Bought**: \$${AMOUNT} of ${SYMBOL} (Price: ${PRICE})\n"
+      else
+        AUTO_LOG+="❌ **Failed to Buy ${SYMBOL}**: ${BUY_RES}\n"
+      fi
     else
-      node "$BASE_DIR/scripts/save-pending-alert.js" "$FIRST_SYMBOL" "$FIRST_AMOUNT" "$FIRST_PRICE" "$FIRST_SCORE" >/dev/null 2>&1 || true
+      node "$BASE_DIR/scripts/save-pending-alert.js" "$SYMBOL" "$AMOUNT" "$PRICE" "$SCORE" >/dev/null 2>&1 || true
     fi
   fi
   
   if [[ "$AUTONOMOUS" == "true" ]]; then
-    MESSAGE+="🤖 **Autonomous Mode Active**\n\n$BUY_OUTPUT"
+    # In auto mode, we don't spam the full analysis unless we bought something
+    if [[ -z "$AUTO_LOG" ]]; then
+      MESSAGE="" # Will be handled by "no recommendations" at the end
+    else
+      MESSAGE+="🤖 **Autonomous Mode Actions**\n\n"
+    fi
   else
-    MESSAGE+="📈 Paper trade alert\n\n$BUY_OUTPUT\n\nReply with one of these:\n- place it\n- don't place it\n- skip this one"
+    MESSAGE+="📈 Paper trade alert\n\n$BUY_OUTPUT\n\nReply with 'place it' to execute."
   fi
 fi
 
 if [[ "$SELL_OUTPUT" != "[]" && -n "$SELL_OUTPUT" ]]; then
-  FIRST_SELL_SYMBOL=$(SELL_OUTPUT="$SELL_OUTPUT" python3 -c 'import json, os; items=json.loads(os.environ.get("SELL_OUTPUT", "[]")); print(items[0]["symbol"] if items else "")')
-  FIRST_SELL_QTY=$(SELL_OUTPUT="$SELL_OUTPUT" python3 -c 'import json, os; items=json.loads(os.environ.get("SELL_OUTPUT", "[]")); print(items[0]["qty"] if items else "")')
-  
-  if [[ -n "$FIRST_SELL_SYMBOL" && -n "$FIRST_SELL_QTY" ]]; then
-    if [[ "$AUTONOMOUS" == "true" ]]; then
-      echo "STEP: auto-sell"
-      node "$BASE_DIR/scripts/trading.js" sell "$FIRST_SELL_SYMBOL" "$FIRST_SELL_QTY" > /tmp/sell_res.log 2>&1 || true
-      AUTO_LOG+="✅ **Autonomous Sell**: Placed sell order for ${FIRST_SELL_QTY} units of ${FIRST_SELL_SYMBOL}.\n"
-    else
-      node "$BASE_DIR/scripts/save-pending-sell.js" "$FIRST_SELL_SYMBOL" "$FIRST_SELL_QTY" >/dev/null 2>&1 || true
-    fi
-  fi
-
-  SELL_TEXT=$(SELL_OUTPUT="$SELL_OUTPUT" python3 - <<'PY'
+  # Handle multiple sells in autonomous mode
+  if [[ "$AUTONOMOUS" == "true" ]]; then
+    echo "STEP: auto-sell-loop"
+    SYMBOLS=$(echo "$SELL_OUTPUT" | jq -r '.[].symbol')
+    for S in $SYMBOLS; do
+      QTY=$(echo "$SELL_OUTPUT" | jq -r ".[] | select(.symbol==\"$S\") | .qty")
+      REASON=$(echo "$SELL_OUTPUT" | jq -r ".[] | select(.symbol==\"$S\") | .reason")
+      echo "STEP: auto-sell ($S)"
+      SELL_RES=$(node "$BASE_DIR/scripts/trading.js" sell "$S" "$QTY" 2>&1 || true)
+      if [[ "$SELL_RES" == *"Order submitted"* ]]; then
+        AUTO_LOG+="✅ **Sold**: ${S} (${QTY} units) - ${REASON}\n"
+      else
+        AUTO_LOG+="❌ **Failed to Sell ${S}**: ${SELL_RES}\n"
+      fi
+    done
+  else
+    # In manual mode, just handle the first one for the pending system
+    FIRST_S=$(echo "$SELL_OUTPUT" | jq -r '.[0].symbol')
+    FIRST_Q=$(echo "$SELL_OUTPUT" | jq -r '.[0].qty')
+    node "$BASE_DIR/scripts/save-pending-sell.js" "$FIRST_S" "$FIRST_Q" >/dev/null 2>&1 || true
+    
+    SELL_TEXT=$(SELL_OUTPUT="$SELL_OUTPUT" python3 - <<'PY'
 import json, os
 items = json.loads(os.environ.get('SELL_OUTPUT', '[]'))
-if not items:
-    print('')
-else:
-    first = items[0]
-    projected_giveback = max(first['pnlPct'] * 0.35, 2.0)
-    print(
-        "📉 Sell idea\n\n"
-        f"Symbol: {first['symbol']}\n"
-        f"Qty held: {first['qty']}\n"
-        f"Why I want to sell: {first['reason']}\n"
-        f"Current gain/loss: {first['pnlPct']:.2f}%\n"
-        f"Projected reason to act: if momentum fades, you could give back roughly {projected_giveback:.2f}% of the move.\n"
-        "Why sell it now: the setup looks stretched enough that protecting gains is reasonable.\n"
-        "Manual vs auto: you can sell it yourself, or I can do it for you.\n"
-    )
+first = items[0]
+print(f"📉 Sell idea: {first['symbol']}\nQty: {first['qty']}\nWhy: {first['reason']}\nP&L: {first['pnlPct']:.2f}%")
 PY
 )
-  if [[ -n "$SELL_TEXT" ]]; then
-    if [[ -n "$MESSAGE" ]]; then
-      MESSAGE+="\n\n---\n\n"
-    fi
-    MESSAGE+="$SELL_TEXT"
-    if [[ "$AUTONOMOUS" != "true" ]]; then
-      MESSAGE+="\nReply with one of these:\n- sell it\n- i'll do it manually\n- skip this one"
-    fi
+    if [[ -n "$MESSAGE" ]]; then MESSAGE+="\n\n---\n\n"; fi
+    MESSAGE+="$SELL_TEXT\nReply with 'sell it' to execute."
   fi
 fi
 
 if [[ -n "$AUTO_LOG" ]]; then
-  MESSAGE+="\n\n**Actions Taken:**\n$AUTO_LOG"
+  MESSAGE+="$AUTO_LOG"
 fi
 
 if [[ -z "$MESSAGE" ]]; then
   echo "STEP: no-message"
-  STATUS_PRE="📊 Alpaca monitor check complete"
-  if [[ "$AUTONOMOUS" == "true" ]]; then STATUS_PRE="🤖 Autonomous monitor check complete"; fi
-  MESSAGE="$STATUS_PRE — no buy or sell recommendations found right now."
+  # Optional: only send "no ideas" once an hour instead of every 5 mins to reduce spam
+  MINUTE=$(date +%M)
+  if [[ "$MINUTE" == "00" || "$MINUTE" == "05" || "$AUTONOMOUS" != "true" ]]; then
+    STATUS_PRE="📊 Alpaca monitor"
+    if [[ "$AUTONOMOUS" == "true" ]]; then STATUS_PRE="🤖 Autonomous monitor"; fi
+    MESSAGE="$STATUS_PRE: no active recommendations right now."
+  else
+    exit 0 # Silent exit for most 5-min intervals if nothing happened
+  fi
 fi
 
 echo "STEP: send-discord"

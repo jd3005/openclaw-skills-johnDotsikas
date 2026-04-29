@@ -2,6 +2,7 @@
   "userId": "john",
   "paperOnly": true,
   "notifyOnly": true,
+  "autonomous": true,
   "discordTarget": "user:1485786023609761904",
   "checkIntervalMinutes": 60,
   "stockWatchlist": ["AAPL", "NVDA", "TSLA", "SPY", "QQQ", "AMD", "META", "MSFT"],

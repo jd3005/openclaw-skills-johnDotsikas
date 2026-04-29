@@ -78,7 +78,7 @@ if [[ -n "$BUY_OUTPUT" && "$BUY_OUTPUT" != "No trade ideas right now." && "$BUY_
   
   if [[ "$AUTONOMOUS" == "true" ]]; then
     if [[ -n "$AUTO_LOG" ]]; then
-      MESSAGE+="🤖 **Autonomous Mode Actions**\n\n"
+      MESSAGE+="🤖 **Autonomous Portfolio Updates**\n\n"
     fi
   fi
 fi

@@ -114,57 +114,46 @@ class AlphaShieldStrategy:
         # --- ALPHA LOGIC ---
         if res["mode"] == "ALPHA":
             # 1. Aggressive Momentum / Breakout
-            # RSI > 70, Vol > 2x, Technical Breakout (Current Close > Max of last 20 Highs)
+            # Higher bar: Vol > 2.2x, RSI > 72
             recent_max = max(highs[-21:-1])
-            if rsi > 70 and res["vol_ratio"] >= 1.8 and current_price > recent_max:
+            if rsi > 72 and res["vol_ratio"] >= 2.2 and current_price > recent_max:
                 res["action"] = "BUY"
-                res["reasoning"] = "ALPHA: Momentum Breakout detected (RSI > 70, High Vol, New 20-day High)."
+                res["reasoning"] = "ALPHA: High-Conviction Momentum Breakout (Extremely High Vol & RSI)."
                 res["suggestedSize"] = 2000
                 res["trailingStop"] = 3.0
-                res["takeProfit"] = current_price * 1.20
+                res["takeProfit"] = current_price * 1.25 # 25% Target
                 
-            # 2. Intraday Pullback Scalping (using 1Hour bars for more precision)
-            # Drop 4-7% intraday with no bad news (we assume no news if not specified)
-            elif (current_price - prev_price) / prev_price <= -0.04 and market_trend == 'bull':
+            # 2. Intraday Pullback Scalping
+            # Deepen the dip required to 5-8%
+            elif (current_price - prev_price) / prev_price <= -0.05 and market_trend == 'bull':
                  res["action"] = "BUY"
-                 res["reasoning"] = "ALPHA: Intraday Pullback Scalp (Down >4% in Bull market)."
+                 res["reasoning"] = "ALPHA: Deep Intraday Pullback (Opportunistic Re-entry)."
                  res["suggestedSize"] = 2000
-                 res["stopLoss"] = current_price * 0.97
-                 res["takeProfit"] = current_price * 1.07
-
-            # 3. Short / Breakdown
-            # Break below key support (Min of last 20 Lows) on heavy volume
-            recent_min = min(lows[-21:-1])
-            if current_price < recent_min and res["vol_ratio"] >= 1.5:
-                res["action"] = "SHORT"
-                res["reasoning"] = "ALPHA: Technical Breakdown (Below 20-day Low on Volume)."
-                res["suggestedSize"] = 2000
-                res["stopLoss"] = current_price * 1.04
-                res["takeProfit"] = current_price * 0.85
+                 res["stopLoss"] = current_price * 0.96
+                 res["takeProfit"] = current_price * 1.15 # 15% Target
 
         # --- SHIELD LOGIC ---
         else:
             # 1. Stable Uptrend
-            # Price > 50MA and 200MA
             if sma50 and sma200 and current_price > sma50 and current_price > sma200:
-                # Enter on dip toward 50MA (within 2% of 50MA)
+                # Enter on meaningful dip toward 50MA (within 1% of 50MA)
                 dist_to_50ma = (current_price - sma50) / sma50
-                if 0 <= dist_to_50ma <= 0.02 and rsi < 70:
+                if 0 <= dist_to_50ma <= 0.015 and rsi < 65:
                     res["action"] = "BUY"
-                    res["reasoning"] = "SHIELD: Stable Uptrend accumulation (Near 50-day MA)."
-                    res["suggestedSize"] = 1500
-                    res["trailingStop"] = 2.0
-                    res["takeProfit"] = current_price * 1.05
+                    res["reasoning"] = "SHIELD: Conservative Uptrend accumulation (Targeting 8% Swing)."
+                    res["suggestedSize"] = 2000 # Full size for high conviction
+                    res["trailingStop"] = 2.5
+                    res["takeProfit"] = current_price * 1.08 # 8% Target
                 
-            # 2. Blue Chip/ETF accumulation on 2-4% dip from highs
+            # 2. Blue Chip/ETF accumulation on 3-5% dip from highs
             max_recent = max(highs[-30:])
             dip_pct = (max_recent - current_price) / max_recent
-            if 0.02 <= dip_pct <= 0.05 and market_trend == 'bull':
+            if 0.03 <= dip_pct <= 0.06 and market_trend == 'bull':
                 res["action"] = "BUY"
-                res["reasoning"] = f"SHIELD: Defensive accumulation on {dip_pct*100:.1f}% dip from highs."
-                res["suggestedSize"] = 1000
-                res["trailingStop"] = 2.0
-                res["takeProfit"] = current_price * 1.06
+                res["reasoning"] = f"SHIELD: Strategic accumulation on {dip_pct*100:.1f}% dip."
+                res["suggestedSize"] = 2000
+                res["trailingStop"] = 2.5
+                res["takeProfit"] = current_price * 1.08 # 8% Target
 
             # 3. Overbought Market Protection
             if rsi > 75 or vix > 25:

@@ -14,15 +14,15 @@
       "rsiBreakout": 70,
       "volMultiplier": 2.0,
       "trailingStop": 3.0,
-      "targetGain": 20.0
+      "targetGain": 25.0
     },
     "shield": {
       "symbols": ["SPY", "QQQ", "AAPL", "MSFT", "BTCUSD", "ETHUSD"],
       "maxSize": 2000,
-      "prefSizeMin": 500,
-      "prefSizeMax": 1500,
-      "trailingStop": 2.0,
-      "targetGain": 5.0
+      "prefSizeMin": 1000,
+      "prefSizeMax": 2000,
+      "trailingStop": 2.5,
+      "targetGain": 8.0
     }
   },
   "thresholds": {

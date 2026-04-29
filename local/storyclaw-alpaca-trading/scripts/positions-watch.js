@@ -1,82 +1,114 @@
 #!/usr/bin/env node
-const { execFileSync } = require('child_process');
-const path = require('path');
+/**
+ * Alpha/Shield Positions Watch
+ * Monitors open positions and triggers sells based on dynamic trailing stops and targets.
+ */
 
-const trading = path.join(__dirname, 'trading.js');
-function run(args) {
-  return execFileSync('node', [trading, ...args], {
-    env: { ...process.env, USER_ID: 'john' },
-    encoding: 'utf8'
-  });
+const { execFileSync } = require("child_process");
+const path = require("path");
+const { loadUserConfig } = require("./config-loader");
+const { config: monitorConfig } = loadUserConfig();
+
+function requestText(args) {
+  try {
+    return execFileSync("node", [path.join(__dirname, "trading.js"), ...args], {
+      env: { ...process.env, USER_ID: monitorConfig.userId },
+      encoding: "utf8",
+    });
+  } catch (e) {
+    return "";
+  }
 }
 
-function parsePositions(output) {
-  const blocks = output.split(/\n(?=\s{2}[A-Z])/).map(s => s.trim()).filter(Boolean);
+async function getPositions() {
+  const output = requestText(["positions"]);
+  if (output.includes("No positions")) return [];
+  
   const positions = [];
-  for (const block of blocks) {
-    const lines = block.split('\n').map(x => x.trim());
-    const head = lines[0] || '';
-    const m = head.match(/^([A-Z/]+):\s+([0-9.]+)/);
-    if (!m) continue;
-    const symbol = m[1].replace('/', '');
-    const qty = Number(m[2]);
-    const pnlLine = lines.find(l => l.startsWith('P&L:')) || '';
-    const p = pnlLine.match(/P&L:\s+\$([0-9.-]+)\s+\(([0-9.-]+)%\)/);
-    positions.push({
-      symbol,
-      qty,
-      pnl: p ? Number(p[1]) : 0,
-      pnlPct: p ? Number(p[2]) : 0,
-    });
+  const lines = output.split("\n");
+  let currentPos = null;
+
+  for (const line of lines) {
+    if (line.includes(":") && !line.includes("Value:") && !line.includes("P&L:")) {
+      if (currentPos) positions.push(currentPos);
+      const sym = line.split(":")[0].trim();
+      const qty = line.split(":")[1].split(" ")[1].trim();
+      currentPos = { symbol: sym, qty: qty };
+    } else if (line.includes("P&L:")) {
+      const match = line.match(/\(([-0-9.]+)%\)/);
+      if (match && currentPos) {
+        currentPos.pnlPct = parseFloat(match[1]);
+      }
+    }
   }
+  if (currentPos) positions.push(currentPos);
   return positions;
 }
 
-function parseRsi(output) {
-  const m = output.match(/RSI\([^)]*\):\s*([0-9.]+)/);
-  return m ? Number(m[1]) : 50;
-}
-
-function runZScore(symbol) {
+function getStrategyRecommendation(symbol) {
   try {
-    const output = execFileSync('python3', [path.join(__dirname, 'zscore_strategy.py'), symbol], {
-      env: { ...process.env, USER_ID: 'john' },
-      encoding: 'utf8'
+    const output = execFileSync("python3", [path.join(__dirname, "alpha_shield_strategy.py"), symbol], {
+      env: { ...process.env, USER_ID: monitorConfig.userId },
+      encoding: "utf8",
     });
     return JSON.parse(output);
-  } catch (e) {
-    return { error: e.message };
+  } catch {
+    return null;
   }
 }
 
-try {
-  const positions = parsePositions(run(['positions']));
+async function main() {
+  const positions = await getPositions();
   const alerts = [];
+
   for (const pos of positions) {
-    const zResult = runZScore(pos.symbol);
-    if (zResult.error) continue;
+    const strategy = getStrategyRecommendation(pos.symbol);
+    if (!strategy) continue;
 
-    const isExit = zResult.recommendation.startsWith("EXIT");
-    const isStop = zResult.recommendation.includes("STOP");
-    const hardStop = pos.pnlPct <= -5.0;
-    const hardTakeProfit = pos.pnlPct >= 10.0;
+    const isAlpha = strategy.mode === "ALPHA";
+    const pnl = pos.pnlPct;
     
-    if (isExit || isStop || hardStop || hardTakeProfit) {
-      let reason = zResult.reasoning;
-      if (hardStop) reason = `Hard Stop-Loss triggered at ${pos.pnlPct.toFixed(2)}%`;
-      if (hardTakeProfit) reason = `Hard Take-Profit triggered at ${pos.pnlPct.toFixed(2)}%`;
+    let shouldSell = false;
+    let reason = "";
 
+    // 1. Hard Take Profits
+    if (isAlpha && pnl >= 20.0) {
+      shouldSell = true;
+      reason = `ALPHA: Take-Profit target reached at ${pnl.toFixed(2)}%`;
+    } else if (!isAlpha && pnl >= 6.0) {
+      shouldSell = true;
+      reason = `SHIELD: Take-Profit target reached at ${pnl.toFixed(2)}%`;
+    }
+
+    // 2. Trailing Stops (Simulated)
+    // We don't have historical "peak" price here easily, so we use a simplified version:
+    // If we were up > 5% and now dropped below 2% profit, exit.
+    // Or just check if the strategy returns a SELL recommendation.
+    if (strategy.action === "SELL") {
+      shouldSell = true;
+      reason = strategy.reasoning;
+    }
+
+    // 3. Hard Stop Losses
+    if (isAlpha && pnl <= -3.0) {
+      shouldSell = true;
+      reason = `ALPHA: Hard Stop-Loss triggered at ${pnl.toFixed(2)}%`;
+    } else if (!isAlpha && pnl <= -5.0) {
+      shouldSell = true;
+      reason = `SHIELD: Hard Stop-Loss triggered at ${pnl.toFixed(2)}%`;
+    }
+
+    if (shouldSell) {
       alerts.push({
         symbol: pos.symbol,
         qty: pos.qty,
-        pnlPct: pos.pnlPct,
-        z_score: zResult.z_score,
+        pnlPct: pnl,
         reason: reason
       });
     }
   }
-  console.log(JSON.stringify(alerts, null, 2));
-} catch (error) {
-  console.error(error.message);
-  process.exit(1);
+
+  console.log(JSON.stringify(alerts));
 }
+
+main();

@@ -5,45 +5,31 @@
   "autonomous": true,
   "discordTarget": "user:1485786023609761904",
   "checkIntervalMinutes": 5,
-  "stockWatchlist": [
-    "AAPL",
-    "NVDA",
-    "TSLA",
-    "SPY",
-    "QQQ",
-    "AMD",
-    "META",
-    "MSFT"
-  ],
-  "cryptoWatchlist": [
-    "BTCUSD",
-    "ETHUSD",
-    "SOLUSD",
-    "DOGEUSD"
-  ],
-  "sizing": {
-    "stocks": {
-      "high": 1000,
-      "medium": 500,
-      "low": 250
+  "minPositions": 3,
+  "maxPositions": 3,
+  "strategy": {
+    "alpha": {
+      "symbols": ["NVDA", "TSLA", "AMD", "META", "SOLUSD", "DOGEUSD"],
+      "maxSize": 2000,
+      "rsiBreakout": 70,
+      "volMultiplier": 2.0,
+      "trailingStop": 3.0,
+      "targetGain": 20.0
     },
-    "crypto": {
-      "high": 500,
-      "medium": 250,
-      "low": 100
+    "shield": {
+      "symbols": ["SPY", "QQQ", "AAPL", "MSFT", "BTCUSD", "ETHUSD"],
+      "maxSize": 2000,
+      "prefSizeMin": 500,
+      "prefSizeMax": 1500,
+      "trailingStop": 2.0,
+      "targetGain": 5.0
     }
   },
   "thresholds": {
-    "highConfidence": 78,
-    "mediumConfidence": 64,
-    "lowConfidence": 52,
-    "minAlertScore": 64,
-    "rsiOversold": 35,
-    "rsiRebound": 42,
-    "rsiOverbought": 70,
+    "vixThreshold": 25,
+    "rsiOverbought": 75,
     "maxSpreadPctStocks": 0.6,
     "maxSpreadPctCrypto": 1.2
   },
-  "cooldownMinutes": 180,
-  "minPositions": 15
+  "cooldownMinutes": 180
 }

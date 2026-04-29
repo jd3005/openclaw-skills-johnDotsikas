@@ -1,0 +1,25 @@
+{
+  "userId": "john",
+  "paperOnly": true,
+  "notifyOnly": true,
+  "discordTarget": "user:1485786023609761904",
+  "checkIntervalMinutes": 60,
+  "stockWatchlist": ["AAPL", "NVDA", "TSLA", "SPY", "QQQ", "AMD", "META", "MSFT"],
+  "cryptoWatchlist": ["BTCUSD", "ETHUSD", "SOLUSD", "DOGEUSD"],
+  "sizing": {
+    "stocks": { "high": 1000, "medium": 500, "low": 250 },
+    "crypto": { "high": 500, "medium": 250, "low": 100 }
+  },
+  "thresholds": {
+    "highConfidence": 78,
+    "mediumConfidence": 64,
+    "lowConfidence": 52,
+    "minAlertScore": 64,
+    "rsiOversold": 35,
+    "rsiRebound": 42,
+    "rsiOverbought": 70,
+    "maxSpreadPctStocks": 0.6,
+    "maxSpreadPctCrypto": 1.2
+  },
+  "cooldownMinutes": 180
+}

@@ -1,0 +1,8 @@
+.env
+*.log
+**/credentials/*.json
+**/state/*.json
+**/.state/*.json
+alpaca-monitor.json
+node_modules/
+.DS_Store

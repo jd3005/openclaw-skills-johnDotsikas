@@ -99,14 +99,17 @@ fi
 
 if [[ -z "$MESSAGE" ]]; then
   echo "STEP: no-message"
-  # Optional: only send "no ideas" once an hour instead of every 5 mins to reduce spam
-  MINUTE=$(date +%M)
-  if [[ "$MINUTE" == "00" || "$MINUTE" == "05" || "$AUTONOMOUS" != "true" ]]; then
-    STATUS_PRE="📊 Alpaca monitor"
-    if [[ "$AUTONOMOUS" == "true" ]]; then STATUS_PRE="🤖 Autonomous monitor"; fi
-    MESSAGE="$STATUS_PRE: no active recommendations right now."
+  if [[ "$AUTONOMOUS" == "true" ]]; then
+    CASH=$(env USER_ID="$USER_ID" node "$BASE_DIR/scripts/trading.js" account | grep "Cash:" | awk '{print $2}')
+    MESSAGE="auton executed: nothing bought or sold. Current Cash: $CASH"
   else
-    exit 0 # Silent exit for most 5-min intervals if nothing happened
+    # For manual mode, only send every hour or if there's an alert
+    MINUTE=$(date +%M)
+    if [[ "$MINUTE" == "00" || "$MINUTE" == "05" ]]; then
+      MESSAGE="📊 Alpaca monitor: no active recommendations right now."
+    else
+      exit 0
+    fi
   fi
 fi
 

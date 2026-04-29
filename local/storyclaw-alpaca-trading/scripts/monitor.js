@@ -92,11 +92,28 @@ function isMarketHoursET(date = new Date()) {
   return total >= 570 && total <= 960;
 }
 
-function classifyConfidence(score, isCrypto) {
-  const t = monitorConfig.thresholds;
-  if (score >= t.highConfidence) return { level: "high", amount: isCrypto ? monitorConfig.sizing.crypto.high : monitorConfig.sizing.stocks.high };
-  if (score >= t.mediumConfidence) return { level: "medium", amount: isCrypto ? monitorConfig.sizing.crypto.medium : monitorConfig.sizing.stocks.medium };
-  return { level: "low", amount: isCrypto ? monitorConfig.sizing.crypto.low : monitorConfig.sizing.stocks.low };
+function classifyConfidence(score, isCrypto, zScore = 0) {
+  const type = isCrypto ? "crypto" : "stocks";
+  const { high, medium, low } = monitorConfig.sizing[type];
+  let level = "low";
+  let amount = low;
+
+  if (score >= monitorConfig.thresholds.highConfidence) {
+    level = "high";
+    amount = high;
+  } else if (score >= monitorConfig.thresholds.mediumConfidence) {
+    level = "medium";
+    amount = medium;
+  }
+
+  // Dynamic scaling based on Z-Score intensity (Projected Profit)
+  // If Z is very extreme (e.g. 3.0), we want to invest more than if it is just 2.0.
+  const intensity = Math.max(0, Math.abs(zScore) - 1.5); // Start scaling after 1.5
+  const dynamicAmount = amount + (intensity * 400); // Add $400 for every point of Z beyond 1.5
+  
+  const finalAmount = Math.min(2000, Math.round(dynamicAmount / 25) * 25); // Round to nearest 25 and cap at 2000
+  
+  return { level, amount: finalAmount };
 }
 
 function scoreSetup(symbol, rsi, quote, bars, isCrypto) {
@@ -296,7 +313,7 @@ function main() {
   for (const res of allResults) {
     if (res.setup.score >= monitorConfig.thresholds.minAlertScore || res.zResult.action === "BUY") {
       if (shouldAlert(state, res.setup.symbol, res.setup.score)) {
-        const confidence = classifyConfidence(res.setup.score, res.isCrypto);
+        const confidence = classifyConfidence(res.setup.score, res.isCrypto, res.zResult.z_score);
         alerts.push(buildAlert(res.setup, confidence, res.zResult));
         state.alerts[res.setup.symbol] = { ts: Date.now(), score: res.setup.score };
         handledSymbols.add(res.setup.symbol);
@@ -314,7 +331,7 @@ function main() {
 
     for (let i = 0; i < Math.min(slotsToFill, candidates.length); i++) {
       const res = candidates[i];
-      const confidence = classifyConfidence(res.setup.score, res.isCrypto);
+      const confidence = classifyConfidence(res.setup.score, res.isCrypto, res.zResult.z_score);
       const alert = buildAlert(res.setup, confidence, res.zResult);
       alerts.push(`⚠️ **FORCED ENTRY** (Portfolio < ${minRequired})\n${alert}`);
       state.alerts[res.setup.symbol] = { ts: Date.now(), score: res.setup.score };

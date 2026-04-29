@@ -1,0 +1,41 @@
+{
+  "important_senders": [],
+  "ignored_senders": [],
+  "important_domains": [],
+  "ignored_domains": [],
+  "keyword_rules": {
+    "important": [
+      "assignment",
+      "deadline",
+      "due",
+      "financial aid",
+      "tuition",
+      "bill",
+      "payment",
+      "security alert",
+      "sign-in",
+      "verify",
+      "professor",
+      "registrar",
+      "canvas"
+    ],
+    "ignore": [
+      "sale",
+      "discount",
+      "coupon",
+      "newsletter",
+      "unsubscribe",
+      "limited time",
+      "deal"
+    ]
+  },
+  "category_weights": {
+    "school": 3,
+    "finance": 3,
+    "security": 3,
+    "deadlines": 3,
+    "personal": 2,
+    "newsletter": -2,
+    "promotion": -3
+  }
+}

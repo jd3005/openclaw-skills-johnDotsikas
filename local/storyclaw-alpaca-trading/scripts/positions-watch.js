@@ -35,9 +35,13 @@ async function getPositions() {
       const qty = line.split(":")[1].split(" ")[1].trim();
       currentPos = { symbol: sym, qty: qty };
     } else if (line.includes("P&L:")) {
-      const match = line.match(/\(([-0-9.]+)%\)/);
-      if (match && currentPos) {
-        currentPos.pnlPct = parseFloat(match[1]);
+      const matchPct = line.match(/\(([-0-9.]+)%\)/);
+      const matchDollar = line.match(/\$([-0-9.,]+)/);
+      if (matchPct && currentPos) {
+        currentPos.pnlPct = parseFloat(matchPct[1]);
+      }
+      if (matchDollar && currentPos) {
+        currentPos.pnlDollar = parseFloat(matchDollar[1].replace(/,/g, ''));
       }
     }
   }
@@ -103,6 +107,7 @@ async function main() {
         symbol: pos.symbol,
         qty: pos.qty,
         pnlPct: pnl,
+        pnlDollar: pos.pnlDollar,
         reason: reason
       });
     }

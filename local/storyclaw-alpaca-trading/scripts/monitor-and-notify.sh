@@ -2,6 +2,20 @@
 set -euo pipefail
 
 BASE_DIR="/home/john/.openclaw/skills/local/storyclaw-alpaca-trading"
+LOCKFILE="$BASE_DIR/state/monitor.lock"
+
+# Simple lockfile mechanism
+if [[ -f "$LOCKFILE" ]]; then
+  # Check if process still exists
+  PID=$(cat "$LOCKFILE")
+  if ps -p "$PID" > /dev/null 2>&1; then
+    echo "Scan already in progress (PID: $PID). Exiting."
+    exit 0
+  fi
+fi
+echo $$ > "$LOCKFILE"
+trap "rm -f $LOCKFILE" EXIT
+
 USER_ID="john"
 export USER_ID
 TARGET="user:1485786023609761904"

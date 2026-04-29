@@ -13,6 +13,30 @@ BUY_OUTPUT=$(timeout 60s env USER_ID="$USER_ID" node "$BASE_DIR/scripts/monitor.
 echo "STEP: sell-scan"
 SELL_OUTPUT=$(timeout 45s env USER_ID="$USER_ID" node "$BASE_DIR/scripts/positions-watch.js" 2>/dev/null || echo '[]')
 
+echo "STEP: circuit-breaker"
+# Get account info for loss check
+ACC_INFO=$(env USER_ID="$USER_ID" node "$BASE_DIR/scripts/trading.js" account)
+# Extract unrealized P&L (handling potential negative sign)
+TOTAL_PL=$(echo "$ACC_INFO" | grep -o 'Equity: $[0-9.]*' | awk '{print $2}' | sed 's/\$//') # This doesn't give P&L directly
+# Let's get actual P&L from the account JSON if possible, or just parse the output of 'positions'
+# Actually, 'account' doesn't show total P&L in the console log I wrote. 
+# I'll update monitor.js to return account status including P&L.
+
+# For now, I'll use a safer check: parse the unrealized P&L from the positions summary.
+TOTAL_UNREALIZED_PNL=$(env USER_ID="$USER_ID" node "$BASE_DIR/scripts/trading.js" positions | grep "P&L:" | awk '{sum+=$2} END {print sum}' | sed 's/\$//')
+if [[ -n "$TOTAL_UNREALIZED_PNL" ]]; then
+  # Remove potential comma
+  TOTAL_UNREALIZED_PNL=$(echo "$TOTAL_UNREALIZED_PNL" | tr -d ',')
+  # Check if loss is > 75000 (using bc for float comparison)
+  if (( $(echo "$TOTAL_UNREALIZED_PNL < -75000" | bc -l) )); then
+    echo "⚠️ EMERGENCY: Loss threshold exceeded ($TOTAL_UNREALIZED_PNL). Stopping autonomous mode."
+    jq '.autonomous = false' "$BASE_DIR/config.monitor.json" > "$BASE_DIR/config.monitor.json.tmp" && mv "$BASE_DIR/config.monitor.json.tmp" "$BASE_DIR/config.monitor.json"
+    AUTONOMOUS="false"
+    MESSAGE="🚨 **CIRCUIT BREAKER TRIGGERED** 🚨\nTotal unrealized loss has reached **$TOTAL_UNREALIZED_PNL**, exceeding the \$75,000 safety limit. \n\n**Autonomous mode has been DISABLED.** I will not place any more trades until you re-enable it."
+    "$OPENCLAW" message send --channel discord --target "$TARGET" --message "$MESSAGE"
+  fi
+fi
+
 echo "STEP: build-message"
 MESSAGE=""
 AUTO_LOG=""

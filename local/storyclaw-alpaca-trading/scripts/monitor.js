@@ -215,19 +215,37 @@ function shouldAlert(state, symbol, score) {
   return Math.abs(score - prev.score) >= 6;
 }
 
-function buildAlert(setup, confidence) {
+
+
+function runZScoreStrategy(symbol) {
+  try {
+    const output = execFileSync("python3", [path.join(__dirname, "zscore_strategy.py"), symbol], {
+      env: { ...process.env, USER_ID: monitorConfig.userId },
+      encoding: "utf8",
+    });
+    return JSON.parse(output);
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+function buildAlert(setup, confidence, zResult) {
   const projectedGainPct = confidence.level === "high" ? 8 : confidence.level === "medium" ? 5 : 3;
   const projectedTarget = setup.price * (1 + projectedGainPct / 100);
   const riskNote = confidence.level === "high" ? "Still a paper trade, but this is one of the stronger setups on the board." : confidence.level === "medium" ? "Reasonable setup, but not something I would call a lock." : "More speculative, so I would keep sizing smaller.";
+  
   return [
     `Paper trade idea: ${setup.symbol}`,
+    `Strategy: Z-Score Mean Reversion (Expert Mode)`,
+    `Z-Score: ${zResult.z_score.toFixed(2)}`,
     `Confidence: ${confidence.level} (${setup.score.toFixed(0)})`,
     `Suggested size: $${confidence.amount}`,
     `Entry idea: around $${setup.price.toFixed(2)}`,
     `Trade style: ${setup.tradeStyle}`,
+    `Analysis: ${zResult.reasoning}`,
     `Why I like it: ${setup.reasons.join("; ")}`,
-    `Projected upside: roughly ${projectedGainPct}% if momentum continues, around $${projectedTarget.toFixed(2)}`,
-    `Why buy it now: the current setup suggests short-term follow-through if the trend holds.`,
+    `Projected upside: roughly ${projectedGainPct}% if reversion occurs, around $${projectedTarget.toFixed(2)}`,
+    `Slippage sim: est. price with 0.1% slippage is $${zResult.sim_price_with_slippage.toFixed(2)}`,
     `Risk note: ${riskNote}`,
     `You can place it yourself, or tell me: alpaca buy-amount ${setup.symbol} ${confidence.amount}`,
   ].join("\n");
@@ -245,10 +263,20 @@ function main() {
     const bars = safeBars(symbol);
     const setup = scoreSetup(symbol, rsi, quote, bars, isCrypto);
     if (!setup) continue;
-    if (setup.score < monitorConfig.thresholds.minAlertScore) continue;
+
+    // Call the Python expert strategy
+    const zResult = runZScoreStrategy(symbol);
+    if (zResult.error || !zResult.z_score) continue;
+
+    // Boost score if Z-Score agrees
+    if (zResult.action === "BUY") setup.score += 20;
+    if (zResult.action === "SELL") setup.score -= 20;
+
+    if (setup.score < monitorConfig.thresholds.minAlertScore && !zResult.action) continue;
     if (!shouldAlert(state, symbol, setup.score)) continue;
+    
     const confidence = classifyConfidence(setup.score, isCrypto);
-    alerts.push(buildAlert(setup, confidence));
+    alerts.push(buildAlert(setup, confidence, zResult));
     state.alerts[symbol] = { ts: Date.now(), score: setup.score };
   }
 

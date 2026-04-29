@@ -37,18 +37,35 @@ function parseRsi(output) {
   return m ? Number(m[1]) : 50;
 }
 
+function runZScore(symbol) {
+  try {
+    const output = execFileSync('python3', [path.join(__dirname, 'zscore_strategy.py'), symbol], {
+      env: { ...process.env, USER_ID: 'john' },
+      encoding: 'utf8'
+    });
+    return JSON.parse(output);
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
 try {
   const positions = parsePositions(run(['positions']));
   const alerts = [];
   for (const pos of positions) {
-    const rsi = parseRsi(run(['rsi', pos.symbol, '14']));
-    if (rsi >= 70 || pos.pnlPct >= 8) {
+    const zResult = runZScore(pos.symbol);
+    if (zResult.error) continue;
+
+    const isExit = zResult.recommendation.startsWith("EXIT");
+    const isStop = zResult.recommendation.includes("STOP");
+    
+    if (isExit || isStop) {
       alerts.push({
         symbol: pos.symbol,
         qty: pos.qty,
         pnlPct: pos.pnlPct,
-        rsi,
-        reason: rsi >= 70 ? `RSI is overbought at ${rsi.toFixed(2)}` : `Open gain is ${pos.pnlPct.toFixed(2)}%`
+        z_score: zResult.z_score,
+        reason: zResult.reasoning
       });
     }
   }

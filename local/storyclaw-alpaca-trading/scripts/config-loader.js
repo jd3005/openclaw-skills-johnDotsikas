@@ -32,8 +32,14 @@ function loadUserConfig(exitOnMissing = true) {
   }
 
   try {
-    const config = JSON.parse(fs.readFileSync(credentialsPath, "utf8"));
-    return { config, userId: USER_ID, credentialsPath, exists: true };
+    const creds = JSON.parse(fs.readFileSync(credentialsPath, "utf8"));
+    const skillConfigPath = path.join(__dirname, "..", "config.monitor.json");
+    let skillConfig = {};
+    if (fs.existsSync(skillConfigPath)) {
+      skillConfig = JSON.parse(fs.readFileSync(skillConfigPath, "utf8"));
+    }
+    const combined = { ...skillConfig, ...creds };
+    return { config: combined, userId: USER_ID, credentialsPath, exists: true };
   } catch (e) {
     if (exitOnMissing) {
       console.error(`❌ Failed to load config for user ${USER_ID}: ${e.message}`);

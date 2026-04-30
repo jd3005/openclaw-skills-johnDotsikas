@@ -23,8 +23,15 @@ TARGET="user:1485786023609761904"
 # --- CIRCUIT BREAKER CHECK ---
 CB_LOCK="$BASE_DIR/state/circuit_breaker.lock"
 if [[ -f "$CB_LOCK" ]]; then
-  echo "Circuit Breaker active. Trading halted."
-  exit 0
+  LOCK_DATE=$(date -r "$CB_LOCK" +%Y-%m-%d)
+  CURRENT_DATE=$(date +%Y-%m-%d)
+  if [[ "$LOCK_DATE" != "$CURRENT_DATE" ]]; then
+    rm -f "$CB_LOCK"
+    echo "New day detected. Clearing Circuit Breaker halt."
+  else
+    echo "Circuit Breaker active from today. Trading halted."
+    exit 0
+  fi
 fi
 
 # Get current equity and P&L

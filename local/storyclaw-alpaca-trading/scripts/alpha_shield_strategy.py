@@ -95,6 +95,30 @@ class AlphaShieldStrategy:
         # (This is a helper, but monitor.js will decide the mode)
         is_alpha_symbol = self.symbol in ["NVDA", "TSLA", "AMD", "META", "SOLUSD", "DOGEUSD"]
         
+        # --- LIQUIDITY FILTER ---
+        # 500k min volume (30-day avg), < 0.5% spread
+        if avg_vol30 < 500000:
+             return {"error": f"Insufficient liquidity: Avg Vol {avg_vol30:.0f} < 500k"}
+        
+        # Note: Spread check would need real-time quote data. 
+        # For now, we assume monitor.js will handle the real-time spread check.
+
+        # --- TIME-OF-DAY RULES ---
+        now_est = datetime.now() - timedelta(hours=4) # Simple EST conversion
+        hour = now_est.hour
+        minute = now_est.minute
+        time_mod = 1.0
+        
+        # 1. 9:30 - 9:40: Catalyst only (We'll flag this for monitor.js to check news)
+        is_opening_bell = (hour == 9 and 30 <= minute <= 40)
+        
+        # 2. 11:00 - 1:00: Low-conviction (-30% size)
+        if 11 <= hour < 13:
+            time_mod = 0.70
+            
+        # 3. 3:30 - 4:00: Exit-only window
+        is_exit_only = (hour == 15 and minute >= 30)
+        
         res = {
             "symbol": self.symbol,
             "price": current_price,
@@ -110,6 +134,9 @@ class AlphaShieldStrategy:
             "stopLoss": 0,
             "takeProfit": 0,
             "trailingStop": 0,
+            "time_mod": time_mod,
+            "is_opening_bell": is_opening_bell,
+            "is_exit_only": is_exit_only,
             "conditions": {
                 "rsi": rsi,
                 "vol_ratio": current_vol / avg_vol30 if avg_vol30 else 1,
@@ -121,24 +148,33 @@ class AlphaShieldStrategy:
 
         # --- ALPHA LOGIC ---
         if res["mode"] == "ALPHA":
+            # Rule: All ALPHA closed before market close (Eliminate overnight risk)
+            # This is handled by monitor.js/positions-watch.js
+
             # 1. Aggressive Momentum / Breakout
             recent_max = max(highs[-21:-1])
             if rsi > 72 and res["vol_ratio"] >= 2.2 and current_price > recent_max:
-                res["action"] = "BUY"
-                res["setup_type"] = "breakout"
-                res["reasoning"] = "ALPHA: High-Conviction Momentum Breakout (Extremely High Vol & RSI)."
-                res["suggestedSize"] = 2000
-                res["trailingStop"] = 3.0
-                res["takeProfit"] = current_price * 1.25
+                if is_exit_only:
+                     res["reasoning"] = "ALPHA: Breakout detected, but in Exit-Only window. Skipping."
+                else:
+                    res["action"] = "BUY"
+                    res["setup_type"] = "breakout"
+                    res["reasoning"] = "ALPHA: High-Conviction Momentum Breakout (Extremely High Vol & RSI)."
+                    res["suggestedSize"] = 2000 * time_mod
+                    res["trailingStop"] = 3.0
+                    res["takeProfit"] = current_price * 1.25
                 
             # 2. Intraday Pullback Scalping
             elif (current_price - prev_price) / prev_price <= -0.05 and market_trend == 'bull':
-                 res["action"] = "BUY"
-                 res["setup_type"] = "pullback"
-                 res["reasoning"] = "ALPHA: Deep Intraday Pullback (Opportunistic Re-entry)."
-                 res["suggestedSize"] = 2000
-                 res["stopLoss"] = current_price * 0.96
-                 res["takeProfit"] = current_price * 1.15
+                 if is_exit_only:
+                     res["reasoning"] = "ALPHA: Pullback detected, but in Exit-Only window. Skipping."
+                 else:
+                    res["action"] = "BUY"
+                    res["setup_type"] = "pullback"
+                    res["reasoning"] = "ALPHA: Deep Intraday Pullback (Opportunistic Re-entry)."
+                    res["suggestedSize"] = 2000 * time_mod
+                    res["stopLoss"] = current_price * 0.96
+                    res["takeProfit"] = current_price * 1.15
 
         # --- SHIELD LOGIC ---
         else:
@@ -146,12 +182,15 @@ class AlphaShieldStrategy:
             if sma50 and sma200 and current_price > sma50 and current_price > sma200:
                 dist_to_50ma = (current_price - sma50) / sma50
                 if 0 <= dist_to_50ma <= 0.015 and rsi < 65:
-                    res["action"] = "BUY"
-                    res["setup_type"] = "uptrend_accumulation"
-                    res["reasoning"] = "SHIELD: Conservative Uptrend accumulation (Targeting 8% Swing)."
-                    res["suggestedSize"] = 2000
-                    res["trailingStop"] = 2.5
-                    res["takeProfit"] = current_price * 1.08
+                    if is_exit_only:
+                        res["reasoning"] = "SHIELD: Entry conditions met, but in Exit-Only window. Skipping."
+                    else:
+                        res["action"] = "BUY"
+                        res["setup_type"] = "uptrend_accumulation"
+                        res["reasoning"] = "SHIELD: Conservative Uptrend accumulation (Targeting 8% Swing)."
+                        res["suggestedSize"] = 2000 * time_mod
+                        res["trailingStop"] = 2.5
+                        res["takeProfit"] = current_price * 1.08
                 
             # 2. Blue Chip/ETF accumulation on 3-5% dip
             max_recent = max(highs[-30:])

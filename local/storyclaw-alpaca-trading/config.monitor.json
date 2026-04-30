@@ -25,6 +25,13 @@
       "targetGain": 8.0
     }
   },
+  "sectors": {
+    "Technology": ["NVDA", "TSLA", "AMD", "META", "AAPL", "MSFT", "AMZN", "GOOGL", "AVGO", "SMCI"],
+    "Financials": ["V", "MA", "JPM"],
+    "Consumer": ["COST", "PG", "NFLX"],
+    "Healthcare": ["UNH"],
+    "Crypto": ["BTCUSD", "ETHUSD", "SOLUSD", "DOGEUSD"]
+  },
   "thresholds": {
     "vixThreshold": 25,
     "rsiOverbought": 75,

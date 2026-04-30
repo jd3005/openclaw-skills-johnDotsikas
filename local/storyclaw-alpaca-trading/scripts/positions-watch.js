@@ -124,6 +124,17 @@ async function main() {
       reason = `SHIELD: Hard Stop-Loss triggered at ${pnl.toFixed(2)}%`;
     }
 
+    // Rule: ALPHA Daily Exit (Close at 3:55 PM)
+    const now_est = new Date(new Date().getTime() - (4 * 60 * 60 * 1000));
+    const hour = now_est.getUTCHours(); // Assuming server in UTC, handle conversion
+    // To be safer, use a simpler check:
+    const isMarketCloseWindow = (now_est.getHours() === 15 && now_est.getMinutes() >= 55);
+
+    if (isAlpha && isMarketCloseWindow) {
+      shouldSell = true;
+      reason = "ALPHA: Market Close Exit rule triggered to eliminate overnight risk.";
+    }
+
     if (shouldSell) {
       logTrade(pos.symbol, currentPrice, pnl, pos.pnlDollar, reason);
       alerts.push({

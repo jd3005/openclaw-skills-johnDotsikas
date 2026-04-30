@@ -121,7 +121,7 @@ function applyPerformanceModifiers(res, config) {
 }
 
 function buildAlphaShieldAlert(res, isPyramid = false) {
-  const adjustedSize = applyPerformanceModifiers(res, monitorConfig);
+  const adjustedSize = res.finalSize || applyPerformanceModifiers(res, monitorConfig);
   if (adjustedSize === 0) return null; // Setup disabled
 
   const prefix = isPyramid ? "🔥 **PYRAMID OPPORTUNITY**" : (res.mode === "ALPHA" ? "🚀 **ALPHA SIDE - Aggressive**" : "🛡️ **SHIELD SIDE - Conservative**");
@@ -138,6 +138,8 @@ function buildAlphaShieldAlert(res, isPyramid = false) {
   ].join("\n");
 }
 
+const { getCorrelation, checkSectorPerformance } = require("./utils_intelligence");
+
 async function main() {
   const alphaSymbols = monitorConfig.strategy.alpha.symbols;
   const shieldSymbols = monitorConfig.strategy.shield.symbols;
@@ -146,9 +148,18 @@ async function main() {
   const state = loadState();
   const currentPositions = await getPositionCount();
   const currentCount = currentPositions.count;
-  const maxAllowed = monitorConfig.maxPositions || 3;
+  const maxAllowed = monitorConfig.maxPositions || 20;
 
-  // 1. Get Market Context (SPY Trend)
+  // 1. Get Intel
+  const intelPath = path.join(__dirname, "..", "state", "daily_intel.json");
+  const intel = fs.existsSync(intelPath) ? JSON.parse(fs.readFileSync(intelPath, "utf8")) : { earnings: [], catalysts: {}, negative_news: {} };
+
+  // 2. Get Sector Performance
+  const sectorRanks = checkSectorPerformance(monitorConfig.sectors, monitorConfig.userId);
+  const topSectors = sectorRanks.slice(0, 2).map(s => s[0]);
+  const bottomSectors = sectorRanks.slice(-2).map(s => s[0]);
+
+  // 3. Get Market Context (SPY Trend)
   const spyBars = safeBars("SPY");
   const spyCloses = spyBars.map(b => b.c);
   const spySma200 = spyCloses.length >= 200 ? spyCloses.slice(-200).reduce((a,b) => a+b, 0) / 200 : 0;
@@ -160,12 +171,35 @@ async function main() {
 
   const allResults = [];
   for (const symbol of symbols) {
-    // If we already have 3 positions, we only scan symbols we already own (for pyramiding)
     if (currentCount >= maxAllowed && !currentPositions.symbols.includes(symbol)) continue;
+
+    // Rule: Sector Priority
+    const symbolSector = Object.keys(monitorConfig.sectors).find(k => monitorConfig.sectors[k].includes(symbol));
+    if (alphaSymbols.includes(symbol)) {
+      if (bottomSectors.includes(symbolSector)) continue; // Avoid bottom 2 for Alpha
+    }
 
     const res = runAlphaShieldStrategy(symbol, marketContext);
     if (!res || res.error) continue;
     
+    // Rule: Earnings/Catalyst
+    if (res.action === "BUY") {
+      if (intel.earnings.includes(symbol)) {
+        // Alpha can only play AFTER earnings. Shield must exit BEFORE.
+        if (res.mode === "ALPHA") {
+           res.suggestedSize = Math.min(res.suggestedSize, 1000);
+           res.stopLoss = res.price * 0.95;
+           res.reasoning += " (Earnings Play - Restricted Size/Stop)";
+        } else {
+           continue; // Shield avoid earnings
+        }
+      }
+      
+      if (res.is_opening_bell && !intel.catalysts[symbol]) {
+        continue; // Opening bell catalyst check
+      }
+    }
+
     if (res.action !== "HOLD") {
       allResults.push(res);
     }
@@ -176,29 +210,37 @@ async function main() {
 
   for (const res of allResults) {
     if (currentCount + alerts.length >= maxAllowed) {
-      // Check for Pyramiding (ALPHA winner up 10%)
-      const pos = currentPositions.raw.find(p => p.symbol === res.symbol);
-      if (pos && res.mode === "ALPHA" && pos.unrealized_plpc >= 0.10) {
-         if (res.vol_ratio >= 1.5 && shouldAlert(state, res.symbol + "-PYR", res.price)) {
-            alerts.push(buildAlphaShieldAlert(res, true));
-            state.alerts[res.symbol + "-PYR"] = { ts: Date.now(), score: res.price };
-         }
-      }
+      // Pyramiding check...
       continue;
     }
 
     if (!handledSymbols.has(res.symbol)) {
+      // Rule: Correlation Check
+      let sizeFactor = 1.0;
+      for (const pos of currentPositions.symbols) {
+         const corr = getCorrelation(res.symbol, pos, monitorConfig.userId);
+         if (corr > 0.8) {
+           sizeFactor = 0.5;
+           res.reasoning += ` (Correlated with ${pos}, size reduced 50%)`;
+           break;
+         }
+      }
+
       if (shouldAlert(state, res.symbol, res.price)) {
-        alerts.push(buildAlphaShieldAlert(res));
-        state.alerts[res.symbol] = { 
-            ts: Date.now(), 
-            price: res.price, 
-            setup_type: res.setup_type,
-            conditions: res.conditions,
-            mode: res.mode,
-            reasoning: res.reasoning
-        };
-        handledSymbols.add(res.symbol);
+        const adjustedSize = applyPerformanceModifiers(res, monitorConfig) * sizeFactor;
+        if (adjustedSize > 0) {
+           res.finalSize = adjustedSize;
+           alerts.push(buildAlphaShieldAlert(res));
+           state.alerts[res.symbol] = { 
+               ts: Date.now(), 
+               price: res.price, 
+               setup_type: res.setup_type,
+               conditions: res.conditions,
+               mode: res.mode,
+               reasoning: res.reasoning
+           };
+           handledSymbols.add(res.symbol);
+        }
       }
     }
   }

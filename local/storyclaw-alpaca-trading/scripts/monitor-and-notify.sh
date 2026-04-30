@@ -19,6 +19,36 @@ trap "rm -f $LOCKFILE" EXIT
 USER_ID="john"
 export USER_ID
 TARGET="user:1485786023609761904"
+
+# --- CIRCUIT BREAKER CHECK ---
+CB_LOCK="$BASE_DIR/state/circuit_breaker.lock"
+if [[ -f "$CB_LOCK" ]]; then
+  echo "Circuit Breaker active. Trading halted."
+  exit 0
+fi
+
+# Get current equity and P&L
+ACCOUNT_JSON=$(env USER_ID="$USER_ID" node "$BASE_DIR/scripts/trading.js" account --json || echo "{}")
+EQUITY=$(echo "$ACCOUNT_JSON" | jq -r '.equity // 0')
+LAST_EQUITY=$(echo "$ACCOUNT_JSON" | jq -r '.last_equity // 0')
+
+if (( $(echo "$EQUITY > 0 && $LAST_EQUITY > 0" | bc -l) )); then
+  DRAWDOWN=$(echo "scale=4; ($LAST_EQUITY - $EQUITY) / $LAST_EQUITY" | bc -l)
+  if (( $(echo "$DRAWDOWN >= 0.06" | bc -l) )); then
+    echo "🚨 CIRCUIT BREAKER TRIGGERED: Daily Drawdown $(echo "$DRAWDOWN * 100" | bc -l)% 🚨"
+    echo "LIQUIDATING ALL POSITIONS AND HALTING TRADING."
+    # Liquidate all
+    POSITIONS=$(env USER_ID="$USER_ID" node "$BASE_DIR/scripts/trading.js" positions)
+    # Simple loop to sell all
+    SYMS=$(echo "$POSITIONS" | grep ":" | grep -v "Value:" | awk -F: '{print $1}')
+    for S in $SYMS; do
+       env USER_ID="$USER_ID" node "$BASE_DIR/scripts/trading.js" sell-all "$S"
+    done
+    date > "$CB_LOCK"
+    "$OPENCLAW" message send --channel discord --target "$TARGET" --message "🚨 **CIRCUIT BREAKER TRIGGERED** 🚨\n\nDaily drawdown exceeded 6% ($((DRAWDOWN * 100))%). All positions liquidated. Trading halted until tomorrow morning."
+    exit 0
+  fi
+fi
 OPENCLAW="/home/john/.npm-global/bin/openclaw"
 AUTONOMOUS=$(jq -r '.autonomous' "$BASE_DIR/config.monitor.json")
 

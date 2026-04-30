@@ -171,13 +171,21 @@ const commands = {
 
     console.log(`🛒 Buying ${qty} ${crypto ? "units" : "shares"} of ${symbol}...`);
 
-    const order = await request("POST", `${BASE_URL}/v2/orders`, {
+    const isExtended = !crypto && (new Date().getUTCHours() < 13 || (new Date().getUTCHours() === 13 && new Date().getUTCMinutes() < 30));
+    let orderBody = {
       symbol,
       qty: String(qty),
       side: "buy",
-      type: "market",
-      time_in_force: crypto ? "gtc" : "day",
-    });
+      type: isExtended ? "limit" : "market",
+      time_in_force: crypto ? "gtc" : (isExtended ? "day" : "day"),
+      extended_hours: isExtended
+    };
+    if (isExtended) {
+      const quote = await this.quote(symbol);
+      orderBody.limit_price = String((quote.ap * 1.01).toFixed(2));
+    }
+
+    const order = await request("POST", `${BASE_URL}/v2/orders`, orderBody);
 
     console.log(`✅ Order submitted: ${order.id}`);
     console.log(`   Status: ${order.status}`);
@@ -192,13 +200,29 @@ const commands = {
 
     console.log(`🛒 Buying $${amount.toFixed(2)} of ${symbol}...`);
 
-    const order = await request("POST", `${BASE_URL}/v2/orders`, {
+    const isExtended = !crypto && (new Date().getUTCHours() < 13 || (new Date().getUTCHours() === 13 && new Date().getUTCMinutes() < 30));
+    let orderBody = {
       symbol,
       notional: String(amount),
       side: "buy",
-      type: "market",
+      type: isExtended ? "limit" : "market",
       time_in_force: crypto ? "gtc" : "day",
-    });
+      extended_hours: isExtended
+    };
+    if (isExtended) {
+       const quote = await this.quote(symbol);
+       const qty = Math.floor(amount / (quote.ap * 1.01));
+       orderBody = {
+         symbol,
+         qty: String(qty),
+         side: "buy",
+         type: "limit",
+         limit_price: String((quote.ap * 1.01).toFixed(2)),
+         time_in_force: "day",
+         extended_hours: true
+       };
+    }
+    const order = await request("POST", `${BASE_URL}/v2/orders`, orderBody);
 
     console.log(`✅ Order submitted: ${order.id}`);
     console.log(`   Status: ${order.status}`);

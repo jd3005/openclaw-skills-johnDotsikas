@@ -61,6 +61,33 @@ function getStrategyRecommendation(symbol) {
   }
 }
 
+function loadMonitorState() {
+  const statePath = path.join(__dirname, "..", "state", `${monitorConfig.userId}.alpaca-monitor.json`);
+  if (!fs.existsSync(statePath)) return { alerts: {} };
+  try { return JSON.parse(fs.readFileSync(statePath, "utf8")); } catch { return { alerts: {} }; }
+}
+
+function logTrade(symbol, exitPrice, pnlPct, pnlDollar, reason) {
+  const state = loadMonitorState();
+  const entryInfo = state.alerts[symbol] || {};
+  const trade = {
+    symbol,
+    mode: entryInfo.mode || "UNKNOWN",
+    setup_type: entryInfo.setup_type || "manual_or_old",
+    entry_price: entryInfo.price || 0,
+    exit_price: exitPrice,
+    pnl_pct: pnlPct,
+    pnl_dollar: pnlDollar,
+    entry_time: entryInfo.ts ? new Date(entryInfo.ts).toISOString() : "UNKNOWN",
+    exit_time: new Date().toISOString(),
+    conditions: entryInfo.conditions || {},
+    reasoning: entryInfo.reasoning || "Standard exit rule triggered.",
+    exit_reason: reason
+  };
+  const logPath = path.join(__dirname, "..", "state", "trades.jsonl");
+  fs.appendFileSync(logPath, JSON.stringify(trade) + "\n");
+}
+
 async function main() {
   const positions = await getPositions();
   const alerts = [];
@@ -71,29 +98,24 @@ async function main() {
 
     const isAlpha = strategy.mode === "ALPHA";
     const pnl = pos.pnlPct;
+    const currentPrice = strategy.price;
     
     let shouldSell = false;
     let reason = "";
 
-    // 1. Hard Take Profits
-    if (isAlpha && pnl >= 20.0) {
+    if (isAlpha && pnl >= 25.0) {
       shouldSell = true;
       reason = `ALPHA: Take-Profit target reached at ${pnl.toFixed(2)}%`;
-    } else if (!isAlpha && pnl >= 6.0) {
+    } else if (!isAlpha && pnl >= 8.0) {
       shouldSell = true;
       reason = `SHIELD: Take-Profit target reached at ${pnl.toFixed(2)}%`;
     }
 
-    // 2. Trailing Stops (Simulated)
-    // We don't have historical "peak" price here easily, so we use a simplified version:
-    // If we were up > 5% and now dropped below 2% profit, exit.
-    // Or just check if the strategy returns a SELL recommendation.
     if (strategy.action === "SELL") {
       shouldSell = true;
       reason = strategy.reasoning;
     }
 
-    // 3. Hard Stop Losses
     if (isAlpha && pnl <= -3.0) {
       shouldSell = true;
       reason = `ALPHA: Hard Stop-Loss triggered at ${pnl.toFixed(2)}%`;
@@ -103,6 +125,7 @@ async function main() {
     }
 
     if (shouldSell) {
+      logTrade(pos.symbol, currentPrice, pnl, pos.pnlDollar, reason);
       alerts.push({
         symbol: pos.symbol,
         qty: pos.qty,

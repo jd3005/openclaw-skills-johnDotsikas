@@ -106,17 +106,35 @@ function runAlphaShieldStrategy(symbol, context) {
   }
 }
 
+function applyPerformanceModifiers(res, config) {
+  if (!config.dynamic_modifiers) return res.suggestedSize;
+  const mod = config.dynamic_modifiers[res.setup_type] || 1.0;
+  
+  // If mod is 0, the setup is disabled
+  if (mod === 0) return 0;
+  
+  let finalSize = res.suggestedSize * mod;
+  
+  // Cap at limits
+  const maxLimit = res.mode === "ALPHA" ? 2000 : 1500;
+  return Math.min(finalSize, maxLimit);
+}
+
 function buildAlphaShieldAlert(res, isPyramid = false) {
+  const adjustedSize = applyPerformanceModifiers(res, monitorConfig);
+  if (adjustedSize === 0) return null; // Setup disabled
+
   const prefix = isPyramid ? "🔥 **PYRAMID OPPORTUNITY**" : (res.mode === "ALPHA" ? "🚀 **ALPHA SIDE - Aggressive**" : "🛡️ **SHIELD SIDE - Conservative**");
   return [
     `${prefix}`,
     `Paper trade idea: ${res.symbol} (${res.action})`,
     `Reasoning: ${res.reasoning}`,
+    `Setup: ${res.setup_type} | Performance Adj: ${((monitorConfig.dynamic_modifiers || {})[res.setup_type] || 1.0).toFixed(2)}x`,
     `Price: $${res.price.toFixed(2)} | RSI: ${res.rsi.toFixed(1)} | Vol: ${res.vol_ratio.toFixed(2)}x`,
-    `Suggested Size: $${res.suggestedSize}`,
+    `Suggested Size: $${adjustedSize.toFixed(2)}`,
     `Target: ${res.takeProfit > 0 ? '$' + res.takeProfit.toFixed(2) : 'Dynamic'}`,
     `Protection: ${res.trailingStop > 0 ? res.trailingStop + '% Trailing Stop' : (res.stopLoss > 0 ? '$' + res.stopLoss.toFixed(2) + ' Hard Stop' : 'Standard')}`,
-    `Action: alpaca ${res.action === "SHORT" ? "sell" : "buy-amount"} ${res.symbol} ${res.suggestedSize}`
+    `Action: alpaca ${res.action === "SHORT" ? "sell" : "buy-amount"} ${res.symbol} ${adjustedSize.toFixed(0)}`
   ].join("\n");
 }
 
@@ -172,7 +190,14 @@ async function main() {
     if (!handledSymbols.has(res.symbol)) {
       if (shouldAlert(state, res.symbol, res.price)) {
         alerts.push(buildAlphaShieldAlert(res));
-        state.alerts[res.symbol] = { ts: Date.now(), score: res.price };
+        state.alerts[res.symbol] = { 
+            ts: Date.now(), 
+            price: res.price, 
+            setup_type: res.setup_type,
+            conditions: res.conditions,
+            mode: res.mode,
+            reasoning: res.reasoning
+        };
         handledSymbols.add(res.symbol);
       }
     }
@@ -182,14 +207,11 @@ async function main() {
   const minRequired = monitorConfig.minPositions || 5;
   if (currentCount + alerts.length < minRequired) {
     const slotsToFill = minRequired - (currentCount + alerts.length);
-    // Sort all available symbols by "undervaluation" (Z-Score or RSI)
-    // We'll use the AlphaShieldStrategy output to find the best of the remaining bunch
     const candidates = [];
     for (const symbol of symbols) {
        if (handledSymbols.has(symbol)) continue;
        const res = runAlphaShieldStrategy(symbol, marketContext);
        if (!res || res.error) continue;
-       // We prefer lower RSI for fill
        candidates.push(res);
     }
     
@@ -199,7 +221,14 @@ async function main() {
       const res = candidates[i];
       if (currentCount + alerts.length >= maxAllowed) break;
       alerts.push(`⚠️ **STRATEGIC FILL** (Portfolio < ${minRequired})\n${buildAlphaShieldAlert(res)}`);
-      state.alerts[res.symbol] = { ts: Date.now(), score: res.price };
+      state.alerts[res.symbol] = { 
+          ts: Date.now(), 
+          price: res.price,
+          setup_type: "strategic_fill",
+          conditions: res.conditions,
+          mode: res.mode,
+          reasoning: "Strategic portfolio fill to maintain minimum position count."
+      };
       handledSymbols.add(res.symbol);
     }
   }
